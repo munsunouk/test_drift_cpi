@@ -1,6 +1,5 @@
 use anchor_lang::prelude::*;
-
-use pyth_sdk_solana::state::load_price_account;
+pub mod instructions;
 
 declare_id!("7xJ99D8b6LJsbnaqYBgvaa4Ga1nDjfHte3mu3aqS4MYq");
 

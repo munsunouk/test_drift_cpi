@@ -10,11 +10,12 @@ name = "test_drift_cpi"
 
 [features]
 no-entrypoint = []
-no-idl = []
-no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
 
 [dependencies]
-anchor-lang = "0.29.0"
-drift = { git = "https://github.com/drift-labs/protocol-v2.git", tag = "v2.71.0", features = ["cpi", "mainnet-beta"], default-features = false}
+anchor-lang = "0.27.0"
+anchor-spl = "0.27.0"
+bytemuck = { version = "1.4.0" }
+drift = { git = "https://github.com/drift-labs/protocol-v2.git", commit = "2bbe28c", features = ["cpi", "mainnet-beta"]}
+static_assertions = "1.1.0"

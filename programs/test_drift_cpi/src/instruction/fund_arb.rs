@@ -1,45 +1,23 @@
 use drift::{
-    controller::position::PositionDirection,
+    controller::{
+        order::place_perp_order, position::PositionDirection,
+        spot_position::update_spot_balances_and_cumulative_deposits,
+    },
     cpi::accounts::PlaceAndTake,
-    instructions::{OrderParams, optional_accounts::{load_maps, AccountMaps};
-},
+    error::DriftResult,
+    instructions::{
+        optional_accounts::{load_maps, AccountMaps},
+        user::handle_modify_order,
+        OrderParams,
+    },
+    math::orders::standardize_base_asset_amount_ceil,
     state::{
         oracle::OraclePriceData,
-        user::{MarketType, OrderTriggerCondition, OrderType},
-        perp_market_map::MarketSet
+        perp_market_map::MarketSet,
+        spot_market::SpotMarket,
+        user::{MarketType, OrderTriggerCondition, OrderType, SpotPosition},
     },
 };
-
-pub fn delta<'info>(
-    ctx: Context<'_, '_, '_, 'info, Delta<'info>>,
-    market_index: u16,
-) -> Result<()> {
-    let clock = Clock::get()?;
-    let slot = clock.slot;
-    let now = clock.unix_timestamp;
-
-    let taker = ctx.accounts.user.load()?;
-
-    let (base_init, quote_init) = taker
-        .get_perp_position(market_index)
-        .map_or((0, 0), |p| (p.base_asset_amount, p.quote_asset_amount));
-
-    let remaining_accounts_iter = &mut ctx.remaining_accounts.iter().peekable();
-    let AccountMaps {
-        perp_market_map,
-        mut oracle_map,
-        spot_market_map,
-    } = load_maps(
-        remaining_accounts_iter,
-        &MarketSet::new(),
-        &MarketSet::new(),
-        slot,
-        None,
-    )?;
-
-    let perp_market = perp_market_map.get_ref(&market_index)?;
-    let oracle_price_data = oracle_map.get_price_data(&perp_market.amm.oracle)?;
-}
 
 pub fn get_order_params(
     order_type: OrderType,
@@ -70,6 +48,35 @@ pub fn get_order_params(
     }
 }
 
+pub fn set_perp_order_param() {
+    let order_base_amount =
+        standardize_base_asset_amount_ceil(order_base_amount, perp_market.amm.order_step_size)
+            .unwrap();
+
+    let params = get_order_params(
+        OrderType::Market,
+        MarketType::Perp,
+        direction,
+        order_base_amount,
+        perp_market_index,
+        false,
+    );
+}
+
+pub fn set_spot_order_param() {
+    let spot_order_size =
+        standardize_base_asset_amount_ceil(spot_order_size, spot_market.order_step_size).unwrap();
+
+    let params = get_order_params(
+        OrderType::Market,
+        MarketType::Spot,
+        direction,
+        spot_order_size,
+        spot_market_index,
+        false,
+    );
+}
+
 fn place_and_take<'info>(
     ctx: &Context<'_, '_, '_, 'info, Delta<'info>>,
     orders_params: OrderParams,
@@ -90,6 +97,72 @@ fn place_and_take<'info>(
 
     Ok(())
 }
+
+/// lend and borrow
+// pub fn transfer_spot_position_deposit(
+//     token_amount: i128,
+//     spot_market: &mut SpotMarket,
+//     from_spot_position: &mut SpotPosition,
+//     to_spot_position: &mut SpotPosition,
+// ) -> DriftResult {
+//     validate!(
+//         from_spot_position.market_index == to_spot_position.market_index,
+//         ErrorCode::UnequalMarketIndexForSpotTransfer,
+//         "transfer market indexes arent equal",
+//     )?;
+
+//     update_spot_balances_and_cumulative_deposits(
+//         token_amount.unsigned_abs(),
+//         &SpotBalanceType::Deposit,
+//         spot_market,
+//         from_spot_position,
+//         false,
+//         None,
+//     )?;
+
+//     update_spot_balances_and_cumulative_deposits(
+//         token_amount.unsigned_abs(),
+//         &SpotBalanceType::Borrow,
+//         spot_market,
+//         to_spot_position,
+//         false,
+//         None,
+//     )?;
+// }
+
+// pub fn add_short_position<'info>(
+//     ctx: Context<'_, '_, '_, 'info, Delta<'info>>,
+//     market_index: u16,
+//     amount: u128,
+// ) -> Result<()> {
+//     let clock = Clock::get()?;
+//     let slot = clock.slot;
+//     let now = clock.unix_timestamp;
+
+//     let taker = ctx.accounts.user.load()?;
+
+//     let (base_init, quote_init) = taker
+//         .get_perp_position(market_index)
+//         .map_or((0, 0), |p| (p.base_asset_amount, p.quote_asset_amount));
+
+//     let remaining_accounts_iter = &mut ctx.remaining_accounts.iter().peekable();
+//     let AccountMaps {
+//         perp_market_map,
+//         mut oracle_map,
+//         spot_market_map,
+//     } = load_maps(
+//         remaining_accounts_iter,
+//         &MarketSet::new(),
+//         &MarketSet::new(),
+//         slot,
+//         None,
+//     )?;
+
+//     let perp_market = perp_market_map.get_ref(&market_index)?;
+//     let oracle_price_data = oracle_map.get_price_data(&perp_market.amm.oracle)?;
+
+//     (base_init + amount)
+// }
 
 #[derive(Accounts)]
 pub struct Delta<'info> {
